@@ -1,0 +1,29 @@
+[project]
+name = "ra-gha-gen"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "langchain>=1.0.5",
+    # "krippendorff-alpha",
+    "langchain-openai>=1.0.2",
+    "langgraph>=1.0.3",
+    "nltk>=3.9.2",
+    "polars>=1.35.1",
+    "pyyaml>=6.0.3",
+]
+
+[tool.uv]
+package = true
+
+[tool.basedpyright]
+reportExplicitAny = false
+enableTypeIgnoreComments = true
+reportIgnoreCommentWithoutRule = false
+reportUnusedCallResult = false
+reportAny = false
+reportMissingTypeStubs = false
+reportUnknownMemberType = false
+reportUnknownVariableType = false
+reportUnknownArgumentType = false
