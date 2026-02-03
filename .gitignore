@@ -1,6 +1,9 @@
 *.png
+*.log
+logs
 tmp
 results
+env.py
 
 # Python-generated files
 __pycache__/
