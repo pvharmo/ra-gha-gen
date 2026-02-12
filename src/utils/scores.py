@@ -123,7 +123,7 @@ def print_scores(
     lint_success_rate = results_df["lint_valid"].sum() / len(results_df)
     avg_judge_score = results_df["judge_score"].mean()
 
-    print(f"Average BLEU score: {avg_bleu:.4f}")
+    # print(f"Average BLEU score: {avg_bleu:.4f}")
     print(f"Average METEOR score: {avg_meteor:.4f}")
     print(f"Average Judge score: {avg_judge_score:.4f}")
     print(

@@ -4,6 +4,8 @@ logs
 tmp
 results
 env.py
+repositories
+tests
 
 # Python-generated files
 __pycache__/

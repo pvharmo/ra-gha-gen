@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Any
 
 import env
 from models.workflow import Workflow
@@ -103,6 +104,23 @@ class Score:
     workflow_id: int
     prompt_level: int
     prompt: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "original_workflow": self.original_workflow,
+            "generated_workflow": self.generated_workflow,
+            "judgement": self.judgement,
+            "judge_score": self.judge_score,
+            "bleu_score": self.bleu_score,
+            "meteor_score": self.meteor_score,
+            "lint_valid": self.lint_valid,
+            "lint_output": self.lint_output,
+            "vulnerabilities": self.vulnerabilities,
+            "graph_name": self.graph_name,
+            "workflow_id": self.workflow_id,
+            "prompt_level": self.prompt_level,
+            "prompt": self.prompt,
+        }
 
     @classmethod
     async def new(

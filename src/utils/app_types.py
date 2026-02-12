@@ -1,11 +1,10 @@
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from typing import Literal, NewType, NotRequired, TypedDict
 
 from langchain_core.language_models import LanguageModelInput
 from langchain_core.messages import AIMessage
 from langchain_core.runnables import Runnable
 from langchain_openai import ChatOpenAI
-from langgraph.graph.message import AnyMessage
 
 WorkflowYAML = NewType("WorkflowYAML", str)
 
@@ -21,7 +20,8 @@ class AgentYAML(TypedDict):
 class Agent(TypedDict):
     identifier: str
     model: ChatOpenAI | Runnable[LanguageModelInput, AIMessage]
-    system_prompt: str
+    model_name: str
+    # system_prompt: str
     prompt_template: str
 
 
@@ -109,21 +109,25 @@ class Vulnerability(TypedDict):
 
 @dataclass
 class GraphState:
-    messages: list[AnyMessage]
     workflow: WorkflowYAML | None
+    llm_response: str | None
     static_check: SyntaxValidation | None
     vulnerabilities: list[Vulnerability] | None
+    judgement: str | None
     judge_score: float | None
     prompt: str
-    retries_left: int
+    syntax_retries_left: int
+    if_retries_left: int
+    vuln_retries_left: int
 
     def to_dict(self) -> dict:
         return {
-            "messages": [m.dict() for m in self.messages],
             "workflow": self.workflow,
             "static_check": self.static_check,
             "vulnerabilities": self.vulnerabilities,
             "judge_score": self.judge_score,
             "prompt": self.prompt,
-            "retries_left": self.retries_left,
+            "syntax_retries_left": self.syntax_retries_left,
+            "if_retries_left": self.if_retries_left,
+            "vuln_retries_left": self.vuln_retries_left,
         }

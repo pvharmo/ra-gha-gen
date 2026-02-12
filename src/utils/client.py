@@ -27,7 +27,6 @@ class Client:
 
         async with self.semaphore:
             i += 1
-            print(f"Request {i} sent")
             res = await self.client.chat.completions.create(
                 model=model,
                 messages=messages,
