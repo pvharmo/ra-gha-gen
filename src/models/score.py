@@ -1,10 +1,11 @@
-from dataclasses import dataclass
-from typing import Any
+from dataclasses import dataclass, field
+from typing import Any, cast
 
 import env
 from models.workflow import Workflow
 from utils.app_types import SyntaxValidationOutput, Vulnerability, WorkflowYAML
 from utils.client import Client
+from utils.functional_test import FunctionalTestResult
 from utils.lint import check_vulnerabilities, validate_workflow
 from utils.scores import (
     calculate_bleu_score,
@@ -100,10 +101,23 @@ class Score:
     lint_output: list[SyntaxValidationOutput]
     vulnerabilities: list[Vulnerability]
 
+    functional_test_success: bool
+    functional_test_dryrun_success: bool
+    functional_test_execution_success: bool
+    functional_test_output: str
+    functional_test_errors: str
+
+    difficulty_tier: str
+    difficulty_score: int
+
     graph_name: str
     workflow_id: int
     prompt_level: int
     prompt: str
+
+    functional_test_skipped_jobs: list[str] = field(default_factory=list)
+    functional_test_jobs_executed: list[str] = field(default_factory=list)
+    functional_test_jobs_failed: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -116,6 +130,16 @@ class Score:
             "lint_valid": self.lint_valid,
             "lint_output": self.lint_output,
             "vulnerabilities": self.vulnerabilities,
+            "functional_test_success": self.functional_test_success,
+            "functional_test_dryrun_success": self.functional_test_dryrun_success,
+            "functional_test_execution_success": self.functional_test_execution_success,
+            "functional_test_output": self.functional_test_output,
+            "functional_test_errors": self.functional_test_errors,
+            "functional_test_skipped_jobs": self.functional_test_skipped_jobs,
+            "functional_test_jobs_executed": self.functional_test_jobs_executed,
+            "functional_test_jobs_failed": self.functional_test_jobs_failed,
+            "difficulty_tier": self.difficulty_tier,
+            "difficulty_score": self.difficulty_score,
             "graph_name": self.graph_name,
             "workflow_id": self.workflow_id,
             "prompt_level": self.prompt_level,
@@ -126,22 +150,35 @@ class Score:
     async def new(
         cls,
         workflow: Workflow,
-        generated_workflow: WorkflowYAML,
+        generated_workflow: WorkflowYAML | None,
         prompt_level: int,
         graph_name: str,
+        functional_result: FunctionalTestResult | None = None,
     ):
-        lint_results = validate_workflow(generated_workflow)
-        vulnerabilities = check_vulnerabilities(generated_workflow)
-        bleu_score = calculate_bleu_score(generated_workflow, workflow.workflow)
-        meteor_score = calculate_meteor_score(generated_workflow, workflow.workflow)
+        workflow_yaml = generated_workflow or cast(WorkflowYAML, "")
+
+        lint_results = validate_workflow(workflow_yaml)
+        vulnerabilities = check_vulnerabilities(workflow_yaml)
+        bleu_score = calculate_bleu_score(workflow_yaml, workflow.workflow)
+        meteor_score = calculate_meteor_score(workflow_yaml, workflow.workflow)
         judgement, judge_score = await run_judgement(
             default_prompt_template,
             workflow.get_prompt(prompt_level),
-            generated_workflow,
+            workflow_yaml,
         )
+
+        if functional_result is None:
+            functional_result = FunctionalTestResult(
+                success=False,
+                dryrun_success=False,
+                execution_success=False,
+                output="",
+                errors="Functional test not run",
+            )
+
         return cls(
             original_workflow=workflow.workflow,
-            generated_workflow=generated_workflow,
+            generated_workflow=workflow_yaml,
             judgement=judgement,
             judge_score=judge_score,
             bleu_score=bleu_score,
@@ -149,6 +186,16 @@ class Score:
             lint_valid=lint_results["valid"],
             lint_output=lint_results["output"],
             vulnerabilities=vulnerabilities,
+            functional_test_success=functional_result.success,
+            functional_test_dryrun_success=functional_result.dryrun_success,
+            functional_test_execution_success=functional_result.execution_success,
+            functional_test_output=functional_result.output,
+            functional_test_errors=functional_result.errors,
+            functional_test_skipped_jobs=functional_result.skipped_jobs,
+            functional_test_jobs_executed=functional_result.jobs_executed,
+            functional_test_jobs_failed=functional_result.jobs_failed,
+            difficulty_tier=workflow.difficulty_tier,
+            difficulty_score=workflow.difficulty_score,
             graph_name=graph_name,
             workflow_id=workflow.id,
             prompt_level=prompt_level,

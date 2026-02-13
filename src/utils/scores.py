@@ -116,32 +116,41 @@ def calculate_scores(reference: WorkflowYAML, llm_response: WorkflowYAML):
 
 
 def print_scores(
-    results_df: pl.DataFrame, save_dir: str | None = None, i: str | None = None
+    results_df: pl.DataFrame,
+    save_dir: str | None = None,
+    i: str | None = None,
+    suffix: str | None = None,
 ):
     avg_bleu = results_df["bleu_score"].mean()
     avg_meteor = results_df["meteor_score"].mean()
     lint_success_rate = results_df["lint_valid"].sum() / len(results_df)
     avg_judge_score = results_df["judge_score"].mean()
 
-    # print(f"Average BLEU score: {avg_bleu:.4f}")
+    functional_success_rate = 0.0
+    if "functional_test_success" in results_df.columns:
+        functional_success_rate = results_df["functional_test_success"].sum() / len(
+            results_df
+        )
+
     print(f"Average METEOR score: {avg_meteor:.4f}")
     print(f"Average Judge score: {avg_judge_score:.4f}")
     print(
         f"Lint success rate: {lint_success_rate:.4f} ({results_df['lint_valid'].sum()}/{len(results_df)})"
     )
+    print(f"Functional test success rate: {functional_success_rate:.4f}")
 
     if save_dir:
-        # Save results
-        output_path = f"{save_dir}/scores{('-' + i) if i is not None else ''}.jsonl"
+        file_suffix = suffix if suffix else (("-" + i) if i is not None else "")
+        output_path = f"{save_dir}/scores{file_suffix}.jsonl"
         results_df.write_ndjson(output_path)
-        with open(
-            f"{save_dir}/overview{('-' + i) if i is not None else ''}.json", "w+"
-        ) as f:
+        with open(f"{save_dir}/overview{file_suffix}.json", "w+") as f:
             json.dump(
                 {
                     "avg_bleu": f"{avg_bleu:.4f}",
                     "avg_meteor": f"{avg_meteor:.4f}",
+                    "avg_judge_score": f"{avg_judge_score:.4f}",
                     "lint_success_rate": f"{lint_success_rate:.4f}",
+                    "functional_test_success_rate": f"{functional_success_rate:.4f}",
                     "count": len(results_df),
                 },
                 f,

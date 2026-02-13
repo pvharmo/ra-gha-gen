@@ -51,6 +51,31 @@ class Workflow:
         else:
             raise ValueError("Invalid prompt level")
 
+    @property
+    def difficulty_tier(self) -> str:
+        score = (
+            self.cyclomatic_complexity
+            + self.nb_jobs
+            + self.nb_reusable_workflows * 3
+            + (1 if self.nb_triggers > 1 else 0)
+            + len([a for a in self.actions if "docker" in a.lower()])
+        )
+        if score <= 2:
+            return "easy"
+        elif score <= 5:
+            return "medium"
+        return "hard"
+
+    @property
+    def difficulty_score(self) -> int:
+        return (
+            self.cyclomatic_complexity
+            + self.nb_jobs
+            + self.nb_reusable_workflows * 3
+            + (1 if self.nb_triggers > 1 else 0)
+            + len([a for a in self.actions if "docker" in a.lower()])
+        )
+
     @classmethod
     def get_wf_by_id(self, name: str, id: int) -> Workflow:
         workflows = self.load(name)
