@@ -4,7 +4,6 @@ import os
 import polars as pl
 
 import env
-
 from main import AgentsWorkflow
 from models.score import Score
 from models.workflow import Workflow
@@ -24,7 +23,7 @@ def main():
             f"Difficulty tier: {workflow.difficulty_tier} (score: {workflow.difficulty_score})"
         )
         agents_workflow = AgentsWorkflow(
-            f"{env.repositories_path}/{workflow.repository_owner}/{workflow.repository_name}"
+            f"{env.repositories_path}/{workflow.repository_name}"
         )
         init_state_logger(workflow.id)
         prompt_level = 1
@@ -35,7 +34,7 @@ def main():
             run_functional_test(
                 generated_workflow or "",
                 event_type=workflow.triggers[0] if workflow.triggers else "push",
-                repository_path=f"{env.repositories_path}/{workflow.repository_owner}/{workflow.repository_name}",
+                repository_path=f"{env.repositories_path}/{workflow.repository_name}",
             )
         )
 
