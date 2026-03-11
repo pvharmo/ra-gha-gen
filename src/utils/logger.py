@@ -4,7 +4,9 @@ from datetime import datetime
 from typing import Any
 
 import env
-from models.score import Score
+
+
+# from models.score import Score
 from utils.app_types import GraphState, SyntaxValidation, Vulnerability
 
 logging.basicConfig()
@@ -68,7 +70,7 @@ def log_state(
         f.write("\n")
 
 
-def log_score(score: Score):
+def log_score(score):
     with open(state_file_name, "a") as f:
         json.dump({"log_type": "score", **score.to_dict()}, f)
         f.write("\n")

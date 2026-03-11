@@ -1,28 +1,25 @@
 from __future__ import annotations
 
 import json
-import os
-import re
 import shutil
 import subprocess
 import tempfile
+import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import yaml
+from utils.logger import log_progress
 
 
 @dataclass
 class FunctionalTestResult:
-    success: bool
-    dryrun_success: bool
-    execution_success: bool
-    output: str
-    errors: str
-    skipped_jobs: list[str] = field(default_factory=list)
-    jobs_executed: list[str] = field(default_factory=list)
-    jobs_failed: list[str] = field(default_factory=list)
+    fully_ran: bool
+    dryrun_output: list[dict]
+    dryrun_errors: list[dict]
+    output: list[dict]
+    errors: list[dict]
+    return_code: int | None
 
 
 @dataclass
@@ -71,22 +68,32 @@ DEFAULT_MOCK_SECRETS = {
 }
 
 
-def create_minimal_repo_structure(tmpdir: Path) -> None:
-    (tmpdir / ".git").mkdir(exist_ok=True)
-    (tmpdir / ".git" / "config").write_text("[core]\n\trepositoryformatversion = 0\n")
+def parse_json(line: str) -> dict:
+    try:
+        return json.loads(line.strip())
+    except json.JSONDecodeError:
+        return {"raw_line": line.strip()}
 
-    readme = tmpdir / "README.md"
-    if not readme.exists():
-        readme.write_text(
-            "# Test Repository\n\nThis is a mock repository for testing GitHub Actions workflows.\n"
-        )
+
+def output_to_json(output: str) -> list[dict]:
+    try:
+        return [parse_json(line) for line in output.strip().split("\n") if line.strip()]
+    except json.JSONDecodeError:
+        print("#####---JSON parsing error-------------------------------")
+        print(output)
+        print("-----------------------------------------------------####")
+        return [
+            json.loads(line.strip())
+            for line in output.strip().split("\n")
+            if line.strip()
+        ]
 
 
 class WorkflowTestRunner:
     def __init__(
         self,
         mock_secrets: dict[str, str] | None = None,
-        timeout: int = 300,
+        timeout: int = 900,
         act_path: str = "act",
     ):
         self.mock_secrets = {**DEFAULT_MOCK_SECRETS, **(mock_secrets or {})}
@@ -116,6 +123,15 @@ class WorkflowTestRunner:
                 "linux/amd64",
                 "--artifact-server-path",
                 str(tempfile.mkdtemp("act_artifacts_")),
+                "--platform",
+                "ubuntu-latest=catthehacker/ubuntu:full-latest",
+                "--platform",
+                "ubuntu-22.04=catthehacker/ubuntu:full-22.04",
+                "--platform",
+                "ubuntu-20.04=catthehacker/ubuntu:full-20.04",
+                "--platform",
+                "ubuntu-18.04=catthehacker/ubuntu:full-18.04",
+                "--json",
             ]
         )
 
@@ -133,8 +149,7 @@ class WorkflowTestRunner:
         event_type: str = "push",
         repository_path: str | None = None,
     ) -> FunctionalTestResult:
-
-        skipped_jobs = []
+        log_progress("Generating test environment...")
 
         with tempfile.TemporaryDirectory() as tmpdir:
             tmpdir_path = Path(tmpdir)
@@ -155,11 +170,11 @@ class WorkflowTestRunner:
             workflow_file = workflow_dir / "test_workflow.yml"
             workflow_file.write_text(workflow_yaml)
 
-            create_minimal_repo_structure(tmpdir_path)
-
             mock_event = MockEvent(event_type=event_type)
             event_file = tmpdir_path / "event.json"
             event_file.write_text(json.dumps(mock_event.to_payload()))
+
+            log_progress("Running act dry-run to validate workflow...")
 
             dryrun_cmd = self._build_act_command(workflow_file, event_file, dryrun=True)
             dryrun_result = subprocess.run(
@@ -170,82 +185,82 @@ class WorkflowTestRunner:
                 cwd=tmpdir_path,
             )
 
+            dryrun_output = output_to_json(dryrun_result.stdout)
+
+            dryrun_errors = output_to_json(dryrun_result.stderr)
+
             dryrun_success = dryrun_result.returncode == 0
 
             if not dryrun_success:
                 return FunctionalTestResult(
-                    success=False,
-                    dryrun_success=False,
-                    execution_success=False,
-                    output=dryrun_result.stdout,
-                    errors=dryrun_result.stderr,
-                    skipped_jobs=skipped_jobs,
+                    fully_ran=False,
+                    dryrun_output=dryrun_output,
+                    dryrun_errors=dryrun_errors,
+                    output=[],
+                    errors=[],
+                    return_code=dryrun_result.returncode,
                 )
 
-            exec_cmd = self._build_act_command(workflow_file, event_file, dryrun=False)
+            # exec_cmd = self._build_act_command(workflow_file, event_file, dryrun=False)
 
-            try:
-                exec_result = subprocess.run(
-                    exec_cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=self.timeout,
-                    cwd=tmpdir_path,
-                )
-                execution_success = exec_result.returncode == 0
-                combined_output = dryrun_result.stdout + "\n" + exec_result.stdout
-                combined_errors = dryrun_result.stderr + "\n" + exec_result.stderr
+            # try:
+            #     exec_result = subprocess.run(
+            #         exec_cmd,
+            #         capture_output=True,
+            #         text=True,
+            #         timeout=self.timeout,
+            #         cwd=tmpdir_path,
+            #     )
 
-                jobs_executed, jobs_failed = self._parse_job_results(
-                    exec_result.stdout + exec_result.stderr
-                )
+            #     return FunctionalTestResult(
+            #         fully_ran=True,
+            #         dryrun_output=dryrun_output,
+            #         dryrun_errors=dryrun_errors,
+            #         output=output_to_json(exec_result.stdout),
+            #         errors=output_to_json(exec_result.stderr),
+            #         return_code=exec_result.returncode,
+            #     )
 
-            except subprocess.TimeoutExpired:
-                execution_success = False
-                combined_output = dryrun_result.stdout
-                combined_errors = f"Execution timed out after {self.timeout} seconds"
-                jobs_executed = []
-                jobs_failed = []
+            # except subprocess.TimeoutExpired:
+            #     return FunctionalTestResult(
+            #         fully_ran=False,
+            #         dryrun_output=dryrun_output,
+            #         dryrun_errors=dryrun_errors,
+            #         output=output_to_json(
+            #             exec_result.stdout if "exec_result" in locals() else ""
+            #         ),
+            #         errors=output_to_json(
+            #             exec_result.stderr if "exec_result" in locals() else ""
+            #         )
+            #         + [{"error": f"Execution timed out after {self.timeout} seconds"}],
+            #         return_code=None,
+            #     )
 
             return FunctionalTestResult(
-                success=dryrun_success and execution_success,
-                dryrun_success=dryrun_success,
-                execution_success=execution_success,
-                output=combined_output,
-                errors=combined_errors,
-                skipped_jobs=skipped_jobs,
-                jobs_executed=jobs_executed,
-                jobs_failed=jobs_failed,
+                fully_ran=False,
+                dryrun_output=dryrun_output,
+                dryrun_errors=dryrun_errors,
+                output=[],
+                errors=[],
+                return_code=None,
             )
 
-    def _parse_job_results(self, output: str) -> tuple[list[str], list[str]]:
-        executed = []
-        failed = []
 
-        success_pattern = r"\[.*?\]\s*(?:✓|SUCCESS)\s+(\S+)"
-        fail_pattern = r"\[.*?\]\s*(?:✗|FAIL|ERROR)\s+(\S+)"
-
-        for match in re.finditer(success_pattern, output):
-            executed.append(match.group(1))
-
-        for match in re.finditer(fail_pattern, output):
-            failed.append(match.group(1))
-
-        if not executed and not failed:
-            job_pattern = r"\[.*?/(\w+)\]\s+"
-            for match in re.finditer(job_pattern, output):
-                job_name = match.group(1)
-                if job_name not in executed:
-                    executed.append(job_name)
-
-        return executed, failed
-
-
-async def run_functional_test(
+def run_functional_test(
     workflow_yaml: str,
     event_type: str = "push",
     repository_path: str | None = None,
     mock_secrets: dict[str, str] | None = None,
 ) -> FunctionalTestResult:
     runner = WorkflowTestRunner(mock_secrets=mock_secrets)
-    return runner.run_test(workflow_yaml, event_type, repository_path)
+    try:
+        return runner.run_test(workflow_yaml, event_type, repository_path)
+    except Exception as e:
+        return FunctionalTestResult(
+            fully_ran=False,
+            dryrun_output=[],
+            dryrun_errors=[{"error": str(e), "traceback": traceback.format_exc()}],
+            output=[],
+            errors=[{"error": str(e), "traceback": traceback.format_exc()}],
+            return_code=None,
+        )

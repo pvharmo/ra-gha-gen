@@ -54,8 +54,8 @@ def validate_workflow(workflow: str | None) -> SyntaxValidation:
     output = subprocess.run(
         [
             "actionlint",
-            "-ignore",
-            "action is too old",
+            # "-ignore",
+            # "action is too old",
             "-format",
             "{{json .}}",
             f"{env.tmp_path}/{unique_id}.yml",
@@ -88,7 +88,7 @@ def check_vulnerabilities_with_format(
         return output
 
     if output.strip() == "":
-        return json.loads("{}")
+        return json.loads("[]")
 
     json_output = json.loads(output)
 

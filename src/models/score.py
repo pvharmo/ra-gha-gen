@@ -1,4 +1,6 @@
-from dataclasses import dataclass, field
+import json
+import os
+from dataclasses import dataclass
 from typing import Any, cast
 
 import env
@@ -101,11 +103,7 @@ class Score:
     lint_output: list[SyntaxValidationOutput]
     vulnerabilities: list[Vulnerability]
 
-    functional_test_success: bool
-    functional_test_dryrun_success: bool
-    functional_test_execution_success: bool
-    functional_test_output: str
-    functional_test_errors: str
+    functional_test: FunctionalTestResult
 
     difficulty_tier: str
     difficulty_score: int
@@ -114,10 +112,6 @@ class Score:
     workflow_id: int
     prompt_level: int
     prompt: str
-
-    functional_test_skipped_jobs: list[str] = field(default_factory=list)
-    functional_test_jobs_executed: list[str] = field(default_factory=list)
-    functional_test_jobs_failed: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -130,14 +124,12 @@ class Score:
             "lint_valid": self.lint_valid,
             "lint_output": self.lint_output,
             "vulnerabilities": self.vulnerabilities,
-            "functional_test_success": self.functional_test_success,
-            "functional_test_dryrun_success": self.functional_test_dryrun_success,
-            "functional_test_execution_success": self.functional_test_execution_success,
-            "functional_test_output": self.functional_test_output,
-            "functional_test_errors": self.functional_test_errors,
-            "functional_test_skipped_jobs": self.functional_test_skipped_jobs,
-            "functional_test_jobs_executed": self.functional_test_jobs_executed,
-            "functional_test_jobs_failed": self.functional_test_jobs_failed,
+            "functional_test_fully_ran": self.functional_test.fully_ran,
+            "functional_test_dryrun_output": self.functional_test.dryrun_output,
+            "functional_test_dryrun_errors": self.functional_test.dryrun_errors,
+            "functional_test_output": self.functional_test.output,
+            "functional_test_errors": self.functional_test.errors,
+            "functional_test_return_code": self.functional_test.return_code,
             "difficulty_tier": self.difficulty_tier,
             "difficulty_score": self.difficulty_score,
             "graph_name": self.graph_name,
@@ -145,6 +137,51 @@ class Score:
             "prompt_level": self.prompt_level,
             "prompt": self.prompt,
         }
+
+    def save(self, dir: str):
+        os.makedirs(dir, exist_ok=True)
+        with open(f"{dir}/scores.json", "w") as f:
+            json.dump(
+                {
+                    "judge_score": self.judge_score,
+                    "bleu_score": self.bleu_score,
+                    "meteor_score": self.meteor_score,
+                    "lint_valid": self.lint_valid,
+                    "functional_test_fully_ran": self.functional_test.fully_ran,
+                    "functional_test_return_code": self.functional_test.return_code,
+                    "difficulty_tier": self.difficulty_tier,
+                    "difficulty_score": self.difficulty_score,
+                    "graph_name": self.graph_name,
+                    "workflow_id": self.workflow_id,
+                    "prompt_level": self.prompt_level,
+                },
+                f,
+                indent=4,
+            )
+        with open(f"{dir}/prompt.md", "w") as f:
+            f.write(self.prompt)
+        with open(f"{dir}/original_workflow.yaml", "w") as f:
+            f.write(self.original_workflow)
+        with open(f"{dir}/generated_workflow.yaml", "w") as f:
+            f.write(self.generated_workflow)
+        with open(f"{dir}/judgement.md", "w") as f:
+            f.write(self.judgement)
+        with open(f"{dir}/lint_output.json", "w") as f:
+            json.dump(self.lint_output, f, indent=4)
+        with open(f"{dir}/vulnerabilities.json", "w") as f:
+            json.dump(self.vulnerabilities, f, indent=4)
+        with open(f"{dir}/dryrun_output.jsonl", "w") as f:
+            for line in self.functional_test.dryrun_output:
+                f.write(json.dumps(line) + "\n")
+        with open(f"{dir}/dryrun_errors.jsonl", "w") as f:
+            for line in self.functional_test.dryrun_errors:
+                f.write(json.dumps(line) + "\n")
+        with open(f"{dir}/functional_test_output.jsonl", "w") as f:
+            for line in self.functional_test.output:
+                f.write(json.dumps(line) + "\n")
+        with open(f"{dir}/functional_test_errors.jsonl", "w") as f:
+            for line in self.functional_test.errors:
+                f.write(json.dumps(line) + "\n")
 
     @classmethod
     async def new(
@@ -167,15 +204,6 @@ class Score:
             workflow_yaml,
         )
 
-        if functional_result is None:
-            functional_result = FunctionalTestResult(
-                success=False,
-                dryrun_success=False,
-                execution_success=False,
-                output="",
-                errors="Functional test not run",
-            )
-
         return cls(
             original_workflow=workflow.workflow,
             generated_workflow=workflow_yaml,
@@ -186,14 +214,15 @@ class Score:
             lint_valid=lint_results["valid"],
             lint_output=lint_results["output"],
             vulnerabilities=vulnerabilities,
-            functional_test_success=functional_result.success,
-            functional_test_dryrun_success=functional_result.dryrun_success,
-            functional_test_execution_success=functional_result.execution_success,
-            functional_test_output=functional_result.output,
-            functional_test_errors=functional_result.errors,
-            functional_test_skipped_jobs=functional_result.skipped_jobs,
-            functional_test_jobs_executed=functional_result.jobs_executed,
-            functional_test_jobs_failed=functional_result.jobs_failed,
+            functional_test=functional_result
+            or FunctionalTestResult(
+                fully_ran=False,
+                dryrun_output=[],
+                dryrun_errors=[],
+                output=[],
+                errors=[{"error": "Functional test not run"}],
+                return_code=None,
+            ),
             difficulty_tier=workflow.difficulty_tier,
             difficulty_score=workflow.difficulty_score,
             graph_name=graph_name,
